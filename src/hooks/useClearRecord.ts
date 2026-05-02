@@ -3,12 +3,46 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   useAccount, useConnect, useSendTransaction,
-  useReadContract, useChainId, useSwitchChain,
+  useReadContract, useChainId,
 } from 'wagmi';
 import { base } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 import { encodeRecordClear, CONTRACT_ADDRESS } from '@/lib/attribution';
 import { MINESWEEPER_ABI } from '@/lib/contract';
+
+const BASE_CHAIN_HEX = '0x2105'; // 8453
+
+type EthProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
+
+async function ensureBaseChain(): Promise<void> {
+  const eth = (window as unknown as { ethereum?: EthProvider }).ethereum;
+  if (!eth) throw new Error('No wallet provider');
+
+  try {
+    await eth.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: BASE_CHAIN_HEX }],
+    });
+  } catch (err: unknown) {
+    // Chain not registered in wallet yet — add it first
+    if ((err as { code?: number }).code === 4902) {
+      await eth.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: BASE_CHAIN_HEX,
+          chainName: 'Base',
+          nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+          rpcUrls: ['https://mainnet.base.org'],
+          blockExplorerUrls: ['https://basescan.org'],
+        }],
+      });
+    } else {
+      throw err;
+    }
+  }
+}
 
 export type RecordStatus = 'idle' | 'connecting' | 'pending' | 'success' | 'error' | 'already_recorded';
 
@@ -16,7 +50,6 @@ export function useClearRecord(isDaily: boolean) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { connect, error: connectError } = useConnect();
-  const { switchChainAsync } = useSwitchChain();
   const { sendTransaction } = useSendTransaction();
   const [status, setStatus] = useState<RecordStatus>('idle');
   const pendingRef = useRef(false);
@@ -49,17 +82,17 @@ export function useClearRecord(isDaily: boolean) {
     }
   }, [isDaily, hasClearedTodayData]);
 
-  // Switch to Base if needed, then send transaction
   const executeRecord = useCallback(async () => {
     if (isDaily && hasClearedTodayData === true) {
       setStatus('already_recorded');
       return;
     }
 
+    // Switch to Base if on a different chain
     if (chainId !== base.id) {
       setStatus('connecting');
       try {
-        await switchChainAsync({ chainId: base.id });
+        await ensureBaseChain();
       } catch {
         setStatus('error');
         return;
@@ -74,7 +107,7 @@ export function useClearRecord(isDaily: boolean) {
         onError: () => setStatus('error'),
       },
     );
-  }, [chainId, isDaily, hasClearedTodayData, switchChainAsync, sendTransaction, refetchDaily, refetchTotal]);
+  }, [chainId, isDaily, hasClearedTodayData, sendTransaction, refetchDaily, refetchTotal]);
 
   // Auto-execute after wallet connects
   useEffect(() => {
