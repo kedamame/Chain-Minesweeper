@@ -5,6 +5,7 @@ import {
   useAccount, useConnect, useSendTransaction,
   useReadContract, useChainId,
 } from 'wagmi';
+import type { Connector } from 'wagmi';
 import { base } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 import { encodeRecordClear, CONTRACT_ADDRESS } from '@/lib/attribution';
@@ -16,19 +17,19 @@ type EthProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
-async function ensureBaseChain(): Promise<void> {
-  const eth = (window as unknown as { ethereum?: EthProvider }).ethereum;
-  if (!eth) throw new Error('No wallet provider');
+// Use the connector's own provider (not window.ethereum) for EIP-6963 wallets like Rabby
+async function switchConnectorToBase(connector: Connector): Promise<void> {
+  const provider = await connector.getProvider() as EthProvider;
 
   try {
-    await eth.request({
+    await provider.request({
       method: 'wallet_switchEthereumChain',
       params: [{ chainId: BASE_CHAIN_HEX }],
     });
   } catch (err: unknown) {
     // Chain not registered in wallet yet — add it first
     if ((err as { code?: number }).code === 4902) {
-      await eth.request({
+      await provider.request({
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: BASE_CHAIN_HEX,
@@ -47,7 +48,7 @@ async function ensureBaseChain(): Promise<void> {
 export type RecordStatus = 'idle' | 'connecting' | 'pending' | 'success' | 'error' | 'already_recorded';
 
 export function useClearRecord(isDaily: boolean) {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
   const { connect, error: connectError } = useConnect();
   const { sendTransaction } = useSendTransaction();
@@ -88,11 +89,11 @@ export function useClearRecord(isDaily: boolean) {
       return;
     }
 
-    // Switch to Base if on a different chain
     if (chainId !== base.id) {
+      if (!connector) { setStatus('error'); return; }
       setStatus('connecting');
       try {
-        await ensureBaseChain();
+        await switchConnectorToBase(connector);
       } catch {
         setStatus('error');
         return;
@@ -107,7 +108,7 @@ export function useClearRecord(isDaily: boolean) {
         onError: () => setStatus('error'),
       },
     );
-  }, [chainId, isDaily, hasClearedTodayData, sendTransaction, refetchDaily, refetchTotal]);
+  }, [chainId, connector, isDaily, hasClearedTodayData, sendTransaction, refetchDaily, refetchTotal]);
 
   // Auto-execute after wallet connects
   useEffect(() => {
