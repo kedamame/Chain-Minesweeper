@@ -1,7 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useAccount, useConnect, useSendTransaction, useReadContract } from 'wagmi';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  useAccount, useConnect, useSendTransaction,
+  useReadContract, useChainId, useSwitchChain,
+} from 'wagmi';
+import { base } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 import { encodeRecordClear, CONTRACT_ADDRESS } from '@/lib/attribution';
 import { MINESWEEPER_ABI } from '@/lib/contract';
@@ -10,7 +14,9 @@ export type RecordStatus = 'idle' | 'connecting' | 'pending' | 'success' | 'erro
 
 export function useClearRecord(isDaily: boolean) {
   const { address, isConnected } = useAccount();
+  const chainId = useChainId();
   const { connect, error: connectError } = useConnect();
+  const { switchChainAsync } = useSwitchChain();
   const { sendTransaction } = useSendTransaction();
   const [status, setStatus] = useState<RecordStatus>('idle');
   const pendingRef = useRef(false);
@@ -43,14 +49,21 @@ export function useClearRecord(isDaily: boolean) {
     }
   }, [isDaily, hasClearedTodayData]);
 
-  // Auto-send after wallet connects (triggered by clicking RECORD while not connected)
-  useEffect(() => {
-    if (!isConnected || !pendingRef.current) return;
-    pendingRef.current = false;
-
+  // Switch to Base if needed, then send transaction
+  const executeRecord = useCallback(async () => {
     if (isDaily && hasClearedTodayData === true) {
       setStatus('already_recorded');
       return;
+    }
+
+    if (chainId !== base.id) {
+      setStatus('connecting');
+      try {
+        await switchChainAsync({ chainId: base.id });
+      } catch {
+        setStatus('error');
+        return;
+      }
     }
 
     setStatus('pending');
@@ -61,9 +74,16 @@ export function useClearRecord(isDaily: boolean) {
         onError: () => setStatus('error'),
       },
     );
-  }, [isConnected, isDaily, hasClearedTodayData, sendTransaction, refetchDaily, refetchTotal]);
+  }, [chainId, isDaily, hasClearedTodayData, switchChainAsync, sendTransaction, refetchDaily, refetchTotal]);
 
-  // Connection rejected → reset to error
+  // Auto-execute after wallet connects
+  useEffect(() => {
+    if (!isConnected || !pendingRef.current) return;
+    pendingRef.current = false;
+    executeRecord();
+  }, [isConnected, executeRecord]);
+
+  // Connection rejected → reset
   useEffect(() => {
     if (connectError && pendingRef.current) {
       pendingRef.current = false;
@@ -81,19 +101,7 @@ export function useClearRecord(isDaily: boolean) {
       return;
     }
 
-    if (isDaily && hasClearedTodayData === true) {
-      setStatus('already_recorded');
-      return;
-    }
-
-    setStatus('pending');
-    sendTransaction(
-      { to: CONTRACT_ADDRESS, data: encodeRecordClear(isDaily) },
-      {
-        onSuccess: () => { setStatus('success'); refetchDaily(); refetchTotal(); },
-        onError: () => setStatus('error'),
-      },
-    );
+    executeRecord();
   };
 
   return {
