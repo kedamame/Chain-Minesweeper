@@ -108,6 +108,10 @@ export function MinesweeperGame({ seed, blockNumber, date, mode, isInMiniApp: _i
 
       if (next[r][c].isMine) {
         next = revealAllMines(next);
+        // Mark only the clicked mine so buildShareGrid shows just that one as 💥
+        next = next.map((row, ri) =>
+          row.map((cell, ci) => ri === r && ci === c ? { ...cell, isDeathMine: true } : cell)
+        );
         statusRef.current = 'lost';
         const t = startTimeRef.current ? Math.floor((now - startTimeRef.current) / 1000) : 0;
         setStatus('lost');

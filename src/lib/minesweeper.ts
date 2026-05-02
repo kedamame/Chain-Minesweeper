@@ -3,6 +3,7 @@ export type CellState = {
   isRevealed: boolean;
   isFlagged: boolean;
   neighborCount: number;
+  isDeathMine?: boolean;
 };
 
 export type Board = CellState[][];
@@ -135,8 +136,9 @@ export function countFlags(board: Board): number {
 export function buildShareGrid(board: Board): string {
   return board.map(row =>
     row.map(cell => {
+      if (cell.isDeathMine) return '💥';
       if (!cell.isRevealed) return cell.isFlagged ? '🚩' : '⬛';
-      if (cell.isMine) return '💥';
+      if (cell.isMine) return '⬛'; // other mines stay hidden
       return '🟫';
     }).join('')
   ).join('\n');
