@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { MinesweeperGame } from './MinesweeperGame';
+import { WalletButton } from './WalletButton';
 import { useFarcasterMiniApp, composeCast } from '@/lib/farcaster';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://chain-minesweeper.vercel.app';
@@ -84,6 +85,7 @@ export function GamePage({ seed: dailySeed, blockNumber, date }: Props) {
       }}>
         <span>BASE / {displayDate}</span>
         <span>{mode === 'daily' ? `BLOCK ${blockLabel}` : 'RANDOM MODE'}</span>
+        <WalletButton />
       </div>
 
       {/* Title */}
