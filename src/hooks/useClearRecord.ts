@@ -17,17 +17,14 @@ type EthProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
-// Use the connector's own provider (not window.ethereum) for EIP-6963 wallets like Rabby
 async function switchConnectorToBase(connector: Connector): Promise<void> {
   const provider = await connector.getProvider() as EthProvider;
-
   try {
     await provider.request({
       method: 'wallet_switchEthereumChain',
       params: [{ chainId: BASE_CHAIN_HEX }],
     });
   } catch (err: unknown) {
-    // Chain not registered in wallet yet — add it first
     if ((err as { code?: number }).code === 4902) {
       await provider.request({
         method: 'wallet_addEthereumChain',
@@ -53,7 +50,8 @@ export function useClearRecord(isDaily: boolean) {
   const { connect, error: connectError } = useConnect();
   const { sendTransaction } = useSendTransaction();
   const [status, setStatus] = useState<RecordStatus>('idle');
-  const pendingRef = useRef(false);
+  const pendingConnectRef = useRef(false); // waiting for wallet to connect
+  const pendingTxRef = useRef(false);      // waiting for chain to switch to Base
 
   const { data: hasClearedTodayData, refetch: refetchDaily } = useReadContract(
     isDaily && isConnected && address && CONTRACT_ADDRESS !== '0x'
@@ -83,23 +81,12 @@ export function useClearRecord(isDaily: boolean) {
     }
   }, [isDaily, hasClearedTodayData]);
 
-  const executeRecord = useCallback(async () => {
+  // Send the transaction (called only when already on Base)
+  const doSend = useCallback(() => {
     if (isDaily && hasClearedTodayData === true) {
       setStatus('already_recorded');
       return;
     }
-
-    if (chainId !== base.id) {
-      if (!connector) { setStatus('error'); return; }
-      setStatus('connecting');
-      try {
-        await switchConnectorToBase(connector);
-      } catch {
-        setStatus('error');
-        return;
-      }
-    }
-
     setStatus('pending');
     sendTransaction(
       { to: CONTRACT_ADDRESS, data: encodeRecordClear(isDaily) },
@@ -108,19 +95,40 @@ export function useClearRecord(isDaily: boolean) {
         onError: () => setStatus('error'),
       },
     );
-  }, [chainId, connector, isDaily, hasClearedTodayData, sendTransaction, refetchDaily, refetchTotal]);
+  }, [isDaily, hasClearedTodayData, sendTransaction, refetchDaily, refetchTotal]);
 
-  // Auto-execute after wallet connects
+  // Request chain switch; transaction will fire via the chainId useEffect below
+  const doSwitchChain = useCallback((conn: Connector) => {
+    pendingTxRef.current = true;
+    setStatus('connecting');
+    switchConnectorToBase(conn).catch(() => {
+      pendingTxRef.current = false;
+      setStatus('error');
+    });
+  }, []);
+
+  // After chainId updates to Base in wagmi state → send the pending transaction
   useEffect(() => {
-    if (!isConnected || !pendingRef.current) return;
-    pendingRef.current = false;
-    executeRecord();
-  }, [isConnected, executeRecord]);
+    if (chainId !== base.id || !pendingTxRef.current) return;
+    pendingTxRef.current = false;
+    doSend();
+  }, [chainId, doSend]);
+
+  // After wallet connects → switch chain if needed, or send directly
+  useEffect(() => {
+    if (!isConnected || !pendingConnectRef.current) return;
+    pendingConnectRef.current = false;
+    if (chainId === base.id) {
+      doSend();
+    } else if (connector) {
+      doSwitchChain(connector);
+    }
+  }, [isConnected, chainId, connector, doSend, doSwitchChain]);
 
   // Connection rejected → reset
   useEffect(() => {
-    if (connectError && pendingRef.current) {
-      pendingRef.current = false;
+    if (connectError && pendingConnectRef.current) {
+      pendingConnectRef.current = false;
       setStatus('error');
     }
   }, [connectError]);
@@ -129,13 +137,19 @@ export function useClearRecord(isDaily: boolean) {
     if (CONTRACT_ADDRESS === '0x') return;
 
     if (!isConnected) {
-      pendingRef.current = true;
+      pendingConnectRef.current = true;
       setStatus('connecting');
       connect({ connector: injected() });
       return;
     }
 
-    executeRecord();
+    if (chainId !== base.id) {
+      if (!connector) { setStatus('error'); return; }
+      doSwitchChain(connector);
+      return;
+    }
+
+    doSend();
   };
 
   return {
