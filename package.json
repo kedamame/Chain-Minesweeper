@@ -9,11 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@farcaster/miniapp-sdk": "^0.2.3",
     "@coinbase/wallet-sdk": "^4.3.7",
-    "@walletconnect/ethereum-provider": "^2.23.8",
+    "@farcaster/miniapp-sdk": "^0.2.3",
     "@tanstack/react-query": "^5.56.0",
+    "@walletconnect/ethereum-provider": "^2.23.8",
     "next": "^14.2.35",
+    "ox": "^0.14.20",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "viem": "^2.47.6",
@@ -23,8 +24,8 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "typescript": "^5",
     "eslint": "^8",
-    "eslint-config-next": "^14"
+    "eslint-config-next": "^14",
+    "typescript": "^5"
   }
 }

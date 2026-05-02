@@ -1,8 +1,40 @@
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
+import { encodeFunctionData } from 'viem';
+import { MINESWEEPER_ABI } from '@/lib/contract';
 
 export const runtime = 'nodejs';
 export const maxDuration = 15;
+
+const BASE_RPC = 'https://mainnet.base.org';
+
+async function getTotalClears(addr: string): Promise<number | null> {
+  if (!addr || addr === '0x' || !addr.startsWith('0x')) return null;
+  const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+  if (!contractAddress || contractAddress === '0x') return null;
+
+  try {
+    const callData = encodeFunctionData({
+      abi: MINESWEEPER_ABI,
+      functionName: 'totalClears',
+      args: [addr as `0x${string}`],
+    });
+    const res = await fetch(BASE_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'eth_call',
+        params: [{ to: contractAddress, data: callData }, 'latest'],
+      }),
+      cache: 'no-store',
+    });
+    const json = await res.json() as { result?: string };
+    if (!json.result || json.result === '0x') return 0;
+    return parseInt(json.result, 16);
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -11,6 +43,9 @@ export async function GET(request: NextRequest) {
   const result = searchParams.get('result') ?? 'PLAYED'; // CLEARED / FAILED / PLAYED
   const time = searchParams.get('time') ?? '';
   const block = searchParams.get('block') ?? '';
+  const addr = searchParams.get('addr') ?? '';
+
+  const totalClears = await getTotalClears(addr);
 
   const displayDate = date.replace(/-/g, '.');
   const isWon = result === 'CLEARED';
@@ -62,8 +97,15 @@ export async function GET(request: NextRequest) {
               </span>
             )}
           </div>
-          <div style={{ fontFamily: 'monospace', fontSize: 24, color: '#7A7060', letterSpacing: '0.05em', display: 'flex' }}>
-            {difficulty} - Seeded by Base blockchain
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontFamily: 'monospace', fontSize: 24, color: '#7A7060', letterSpacing: '0.05em', display: 'flex' }}>
+              {difficulty} - Seeded by Base blockchain
+            </div>
+            {totalClears !== null && (
+              <div style={{ fontFamily: 'monospace', fontSize: 22, color: '#1C1510', letterSpacing: '0.05em', display: 'flex' }}>
+                {totalClears} CLEARS ON-CHAIN
+              </div>
+            )}
           </div>
         </div>
 

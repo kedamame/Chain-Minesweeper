@@ -15,16 +15,21 @@ import {
   buildShareGrid,
 } from '@/lib/minesweeper';
 import { GameCell } from './GameCell';
+import { useClearRecord } from '@/hooks/useClearRecord';
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://chain-minesweeper.vercel.app';
 
 type Props = {
   seed: string;
   blockNumber: number;
   date: string;
+  mode: 'daily' | 'random';
   isInMiniApp: boolean;
-  onShareResult: (text: string) => void;
+  onShareResult: (text: string, ogUrl: string) => void;
+  onNewRandom?: () => void;
 };
 
-export function MinesweeperGame({ seed, blockNumber, date, isInMiniApp, onShareResult }: Props) {
+export function MinesweeperGame({ seed, blockNumber, date, mode, isInMiniApp: _isInMiniApp, onShareResult, onNewRandom }: Props) {
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [board, setBoard] = useState<Board>([]);
   const [status, setStatus] = useState<GameStatus>('idle');
@@ -37,6 +42,8 @@ export function MinesweeperGame({ seed, blockNumber, date, isInMiniApp, onShareR
   // Refs to keep latest values accessible inside setBoard callbacks without stale closure
   const statusRef = useRef<GameStatus>('idle');
   const startTimeRef = useRef<number | null>(null);
+
+  const { recordClear, status: recordStatus, address, isContractDeployed } = useClearRecord(mode === 'daily');
 
   const { rows, cols, mines } = DIFFICULTIES[difficulty];
   const flagCount = countFlags(board);
@@ -127,12 +134,16 @@ export function MinesweeperGame({ seed, blockNumber, date, isInMiniApp, onShareR
 
   const handleShare = () => {
     const diff = DIFFICULTIES[difficulty].label;
-    const time = finalTime !== null ? formatTime(finalTime) : '--:--';
-    const result = status === 'won' ? `CLEARED in ${time}` : 'FAILED';
+    const timeStr = formatTime(finalTime ?? elapsed);
+    const result = status === 'won' ? `CLEARED in ${timeStr}` : 'FAILED';
     const grid = buildShareGrid(board);
-    const blockStr = blockNumber > 0 ? `Block #${blockNumber.toLocaleString()}` : date;
-    const text = `Chain Minesweeper\n${date} / ${diff}\n${result}\n${blockStr} - base\n\n${grid}`;
-    onShareResult(text);
+    const modeLabel = mode === 'daily'
+      ? (blockNumber > 0 ? `Block #${blockNumber.toLocaleString()}` : date)
+      : 'RANDOM';
+    const text = `Chain Minesweeper\n${date} / ${diff}\n${result}\n${modeLabel} - base\n\n${grid}`;
+    const resultCode = status === 'won' ? 'CLEARED' : 'FAILED';
+    const ogUrl = `${APP_URL}/og?date=${encodeURIComponent(date)}&diff=${encodeURIComponent(diff.toUpperCase())}&result=${resultCode}&time=${encodeURIComponent(timeStr)}&block=${blockNumber > 0 ? blockNumber : ''}&addr=${address ?? ''}`;
+    onShareResult(text, ogUrl);
   };
 
   const formatTime = (s: number) =>
@@ -247,6 +258,46 @@ export function MinesweeperGame({ seed, blockNumber, date, isInMiniApp, onShareR
         >
           RESET
         </button>
+        {gameOver && mode === 'random' && onNewRandom && (
+          <button
+            onClick={onNewRandom}
+            style={{
+              padding: '8px 20px',
+              background: 'transparent',
+              color: '#1C1510',
+              border: '1px solid #1C1510',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              letterSpacing: '0.1em',
+            }}
+          >
+            NEXT
+          </button>
+        )}
+        {status === 'won' && isContractDeployed && (
+          <button
+            onClick={recordStatus === 'idle' || recordStatus === 'error' ? recordClear : undefined}
+            disabled={recordStatus === 'pending' || recordStatus === 'connecting' || recordStatus === 'success' || recordStatus === 'already_recorded'}
+            style={{
+              padding: '8px 20px',
+              background: recordStatus === 'success' || recordStatus === 'already_recorded' ? '#2D6B3D' : 'transparent',
+              color: recordStatus === 'success' || recordStatus === 'already_recorded' ? '#EDEAD9' : '#1C1510',
+              border: '1px solid #1C1510',
+              cursor: recordStatus === 'pending' || recordStatus === 'connecting' || recordStatus === 'success' || recordStatus === 'already_recorded' ? 'default' : 'pointer',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              letterSpacing: '0.1em',
+              opacity: recordStatus === 'pending' || recordStatus === 'connecting' ? 0.6 : 1,
+            }}
+          >
+            {recordStatus === 'connecting' ? 'CONNECTING...'
+              : recordStatus === 'pending' ? 'RECORDING...'
+              : recordStatus === 'success' ? 'RECORDED!'
+              : recordStatus === 'already_recorded' ? 'RECORDED'
+              : 'RECORD'}
+          </button>
+        )}
         {gameOver && (
           <button
             onClick={handleShare}

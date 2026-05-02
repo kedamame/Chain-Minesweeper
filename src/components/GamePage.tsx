@@ -1,10 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { MinesweeperGame } from './MinesweeperGame';
 import { useFarcasterMiniApp, composeCast } from '@/lib/farcaster';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://chain-minesweeper.vercel.app';
+
+type Mode = 'daily' | 'random';
+
+function makeRandomSeed(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
 
 type Props = {
   seed: string;
@@ -12,15 +18,30 @@ type Props = {
   date: string;
 };
 
-export function GamePage({ seed, blockNumber, date }: Props) {
+export function GamePage({ seed: dailySeed, blockNumber, date }: Props) {
   const { isInMiniApp, isLoading, sdk } = useFarcasterMiniApp();
+  const [mode, setMode] = useState<Mode>('daily');
+  const [randomSeed, setRandomSeed] = useState<string>(makeRandomSeed);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const handleShareResult = async (text: string) => {
+  const currentSeed = mode === 'daily' ? dailySeed : randomSeed;
+
+  const handleNewRandom = useCallback(() => {
+    setRandomSeed(makeRandomSeed());
+    setShareMsg(null);
+  }, []);
+
+  const handleModeSwitch = useCallback((next: Mode) => {
+    setMode(next);
+    setShareMsg(null);
+    if (next === 'random') setRandomSeed(makeRandomSeed());
+  }, []);
+
+  const handleShareResult = async (text: string, ogUrl: string) => {
     setShareMsg(text);
     if (isInMiniApp && sdk) {
-      await composeCast(sdk, text, APP_URL);
+      await composeCast(sdk, text, ogUrl);
     }
   };
 
@@ -32,15 +53,9 @@ export function GamePage({ seed, blockNumber, date }: Props) {
     });
   };
 
-  // Format date for display: 2026.04.30
   const displayDate = date.replace(/-/g, '.');
-
-  // Day number since Unix epoch (for puzzle number)
   const puzzleNum = Math.floor(new Date(date).getTime() / 86_400_000);
-
-  const blockLabel = blockNumber > 0
-    ? `#${blockNumber.toLocaleString()}`
-    : 'OFFLINE';
+  const blockLabel = blockNumber > 0 ? `#${blockNumber.toLocaleString()}` : 'OFFLINE';
 
   return (
     <div style={{
@@ -54,7 +69,7 @@ export function GamePage({ seed, blockNumber, date }: Props) {
       margin: '0 auto',
     }}>
 
-      {/* Top metadata bar — Actuel Image style */}
+      {/* Top metadata bar */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -68,56 +83,69 @@ export function GamePage({ seed, blockNumber, date }: Props) {
         borderBottom: '1px solid #C8C4B0',
       }}>
         <span>BASE / {displayDate}</span>
-        <span>BLOCK {blockLabel}</span>
+        <span>{mode === 'daily' ? `BLOCK ${blockLabel}` : 'RANDOM MODE'}</span>
       </div>
 
-      {/* Title — ultra-condensed display font */}
+      {/* Title */}
       <div style={{ padding: '8px 0 4px', lineHeight: 0.88 }}>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 900,
-          fontSize: 'clamp(56px, 18vw, 88px)',
-          letterSpacing: '-0.02em',
-          color: '#1C1510',
-          textTransform: 'uppercase',
-          lineHeight: 0.9,
-        }}>
-          Chain
-        </div>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 900,
-          fontSize: 'clamp(56px, 18vw, 88px)',
-          letterSpacing: '-0.02em',
-          color: '#1C1510',
-          textTransform: 'uppercase',
-          lineHeight: 0.9,
-        }}>
-          Mines-
-        </div>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 900,
-          fontSize: 'clamp(56px, 18vw, 88px)',
-          letterSpacing: '-0.02em',
-          color: '#1C1510',
-          textTransform: 'uppercase',
-          lineHeight: 0.9,
-        }}>
-          weeper.
-        </div>
+        {['Chain', 'Mines-', 'weeper.'].map(line => (
+          <div key={line} style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 900,
+            fontSize: 'clamp(56px, 18vw, 88px)',
+            letterSpacing: '-0.02em',
+            color: '#1C1510',
+            textTransform: 'uppercase',
+            lineHeight: 0.9,
+          }}>
+            {line}
+          </div>
+        ))}
       </div>
 
-      {/* Puzzle number subtitle */}
+      {/* Mode switcher + puzzle info */}
       <div style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 10,
-        color: '#7A7060',
-        letterSpacing: '0.1em',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 16,
         paddingTop: 4,
       }}>
-        PUZZLE #{puzzleNum}
+        <div style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          color: '#7A7060',
+          letterSpacing: '0.1em',
+        }}>
+          {mode === 'daily' ? `PUZZLE #${puzzleNum}` : 'FREE PLAY'}
+        </div>
+
+        {/* DAILY / RANDOM toggle */}
+        <div style={{
+          display: 'flex',
+          border: '1px solid #1C1510',
+          overflow: 'hidden',
+        }}>
+          {(['daily', 'random'] as Mode[]).map(m => (
+            <button
+              key={m}
+              onClick={() => handleModeSwitch(m)}
+              style={{
+                padding: '4px 10px',
+                background: mode === m ? '#1C1510' : 'transparent',
+                color: mode === m ? '#EDEAD9' : '#1C1510',
+                border: 'none',
+                borderRight: m === 'daily' ? '1px solid #1C1510' : 'none',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: '0.1em',
+              }}
+            >
+              {m === 'daily' ? 'DAILY' : 'RANDOM'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Game */}
@@ -136,11 +164,14 @@ export function GamePage({ seed, blockNumber, date }: Props) {
         </div>
       ) : (
         <MinesweeperGame
-          seed={seed}
-          blockNumber={blockNumber}
+          key={currentSeed}
+          seed={currentSeed}
+          blockNumber={mode === 'daily' ? blockNumber : 0}
           date={date}
+          mode={mode}
           isInMiniApp={isInMiniApp}
           onShareResult={handleShareResult}
+          onNewRandom={mode === 'random' ? handleNewRandom : undefined}
         />
       )}
 
