@@ -2,9 +2,9 @@ const ROOT_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://chain-minesweeper.v
 
 export const minikitConfig = {
   accountAssociation: {
-    header: 'PASTE_FROM_WARPCAST_MANIFEST_TOOL',
-    payload: 'PASTE_FROM_WARPCAST_MANIFEST_TOOL',
-    signature: 'PASTE_FROM_WARPCAST_MANIFEST_TOOL',
+    header: 'eyJmaWQiOjIxMTE4OSwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDMxOTk5REZCMzI1NkQzMjNDQTA1N0RkMjBhREI1NkI4RUQ0NTE3NzQifQ',
+    payload: 'eyJkb21haW4iOiJjaGFpbi1taW5lc3dlZXBlci52ZXJjZWwuYXBwIn0',
+    signature: 'k+8T7dBtRuXk+kO2JseU9QQZSJnfA4Az9XRGKp68m4xCf7B9RmB4gX/KKco80vbA689RkXj2HfNwbGDLuj6NlRs=',
   },
   miniapp: {
     version: '1',
